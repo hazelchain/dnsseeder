@@ -1,9 +1,17 @@
+import random
 import socket
+import sys
 
-ip_extern = '127.0.0.1'
-expected_ip = "seeder.unmined.ca"
+if len(sys.argv) != 3:
+    raise ValueError('unexpected input\nUsage: python <localIp> <ip expected>')
+
+ip_extern = sys.argv[1]
+expected_ip = sys.argv[2]
 ips = [str]
+ip_amount_to_send = 25
 
+
+# region dns
 
 def load_ips():
     global ips
@@ -79,7 +87,7 @@ def respond(data):
 
     flags = get_flags(data[2:4])
     qdc = b'\x00\x01'
-    anc = len(ips).to_bytes(2, byteorder='big')
+    anc = ip_amount_to_send.to_bytes(2, byteorder='big')
     nsc = b'\x00\x00'
     arc = b'\x00\x00'
 
@@ -88,10 +96,13 @@ def respond(data):
     question = build_question()
 
     body = b''
-    for record in ips:
+    for record in list(dict.fromkeys(random.choices(ips, k=ip_amount_to_send))):
         body += rec_to_bytes(600, record)
 
     return header + question + body
+
+
+# endregion
 
 
 if __name__ == '__main__':
