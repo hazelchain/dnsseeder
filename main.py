@@ -1,34 +1,41 @@
 import random
 import socket
 import sys
+import threading
+import time
 
 if len(sys.argv) != 3:
     raise ValueError('unexpected input\nUsage: python <localIp> <ip expected>')
 
 ip_extern = sys.argv[1]
 expected_ip = sys.argv[2]
-ips = [str]
 ip_amount_to_send = 25
+ips = [str]
+lock = threading.Lock()
 
-
-# region dns
 
 def load_ips():
     global ips
-    ips = []
-    with open('ips', 'r') as file:
-        for line in file.readlines():
-            ips.append(line.removesuffix('\n'))
+    with lock:
+        print('locked')
+        ips = []
+        with open('ips', 'r') as file:
+            for line in file.readlines():
+                ips.append(line.replace('\n', '').replace('\r', ''))
 
     print(ips)
 
 
 def add_ip(ip):
     global ips
-    with open('ips', 'a') as file:
-        file.write('\n' + ip)
+    with lock:
+        print('locked')
         ips += ip
+        with open('ips', 'a') as file:
+            file.write('\n' + ip)
 
+
+# region dns
 
 def get_flags(flags):
     b1 = bytes(flags[0:1])
@@ -87,7 +94,7 @@ def respond(data):
 
     flags = get_flags(data[2:4])
     qdc = b'\x00\x01'
-    anc = ip_amount_to_send.to_bytes(2, byteorder='big')
+    anc = (ip_amount_to_send if ip_amount_to_send <= len(ips) else len(ips)).to_bytes(2, byteorder='big')
     nsc = b'\x00\x00'
     arc = b'\x00\x00'
 
@@ -102,14 +109,45 @@ def respond(data):
     return header + question + body
 
 
-# endregion
-
-
-if __name__ == '__main__':
-    load_ips()
+def run_dns():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((ip_extern, 53))
     while 1:
         data, addr = sock.recvfrom(512)
         r = respond(data)
+        with lock:
+            global ips
+            ips.append(addr[0])
         sock.sendto(r, addr)
+
+
+# endregion
+
+
+# region crawler
+
+def run_crawler():
+    global ips
+    while 1:
+        with lock:
+            print(ips)
+            time.sleep(1)
+
+
+# endregion
+
+class Thread(threading.Thread):
+    def __init__(self, t, *args):
+        threading.Thread.__init__(self, target=t, args=args)
+        self.start()
+
+
+if __name__ == '__main__':
+    try:
+        load_ips()
+        Thread(run_dns)
+        Thread(run_crawler)
+        while 1:
+            pass
+    except KeyboardInterrupt:
+        sys.exit('bye')
