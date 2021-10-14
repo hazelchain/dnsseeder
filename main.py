@@ -10,14 +10,18 @@ if len(sys.argv) != 3:
 ip_extern = sys.argv[1]
 expected_ip = sys.argv[2]
 ip_amount_to_send = 25
-ips = [str]
+ips = []
+to_search = []
+last_beat = 0
 lock = threading.Lock()
+
+
+# sock.settimeout(5)
 
 
 def load_ips():
     global ips
     with lock:
-        print('locked')
         ips = []
         with open('ips', 'r') as file:
             for line in file.readlines():
@@ -29,10 +33,18 @@ def load_ips():
 def add_ip(ip):
     global ips
     with lock:
-        print('locked')
-        ips += ip
+        ips.append(ip)
         with open('ips', 'a') as file:
             file.write('\n' + ip)
+
+
+def remove_ip(ip):
+    global ips
+    with lock:
+        ips.remove(ip)
+        with open('ips', 'w') as file:
+            for ip in ips:
+                file.write(ip + '\n')
 
 
 # region dns
@@ -103,22 +115,28 @@ def respond(data):
     question = build_question()
 
     body = b''
-    for record in list(dict.fromkeys(random.choices(ips, k=ip_amount_to_send))):
-        body += rec_to_bytes(600, record)
+    records = list(dict.fromkeys(random.choices(ips, k=ip_amount_to_send)))
+    if len(ips) != 0:
+        for record in records:
+            body += rec_to_bytes(600, record)
 
-    return header + question + body
+    return header + question + body, records
 
 
 def run_dns():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((ip_extern, 53))
     while 1:
-        data, addr = sock.recvfrom(512)
-        r = respond(data)
+        sock.settimeout(None)
+        data, (ip, port) = sock.recvfrom(512)
+        r, recs = respond(data)
         with lock:
-            global ips
-            ips.append(addr[0])
-        sock.sendto(r, addr)
+            global to_search
+            to_search.append(ip)
+
+        print('request from: ' + ip + ' on port ' + str(port) + ", response:", recs)
+
+        sock.sendto(r, (ip, port))
 
 
 # endregion
@@ -127,11 +145,32 @@ def run_dns():
 # region crawler
 
 def run_crawler():
-    global ips
-    while 1:
-        with lock:
-            print(ips)
-            time.sleep(1)
+    pass
+    # global ips, to_search, last_beat
+    # sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # sock.bind((ip_extern, 10541))
+    # sock.settimeout(5)
+    # while 1:
+    #     if not len(to_search) == 0:
+    #         for ip in to_search:
+    #             try:
+    #                 sock.sendto(b'\x00\x01', (ip, 10541))
+    #                 sock.recvfrom(256)
+    #                 add_ip(ip)
+    #                 print('valid node found at ' + ip)
+    #             except socket.timeout:
+    #                 pass
+    #         to_search = []
+    #
+    #     if time.time() - last_beat >= 5:
+    #         last_beat = time.time()
+    #         for ip in ips:
+    #             try:
+    #                 sock.sendto(b'\x00\x01', (ip, 10541))
+    #                 sock.recvfrom(256)
+    #             except socket.timeout:
+    #                 print('time out at ' + str(ip))
+    #                 # remove_ip(ip)
 
 
 # endregion
@@ -143,11 +182,15 @@ class Thread(threading.Thread):
 
 
 if __name__ == '__main__':
+    load_ips()
     try:
-        load_ips()
         Thread(run_dns)
         Thread(run_crawler)
         while 1:
-            pass
+            inp = input()
+            if inp == 'quit()' or inp == '^Z':
+                sys.exit('bye')
+            add_ip(inp)
     except KeyboardInterrupt:
+        quit(0)
         sys.exit('bye')
