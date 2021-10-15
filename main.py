@@ -102,25 +102,26 @@ def rec_to_bytes(ttl, ip):
 
 
 def respond(data):
-    tid_b = data[:2]
+    with lock:
+        tid_b = data[:2]
 
-    flags = get_flags(data[2:4])
-    qdc = b'\x00\x01'
-    anc = (ip_amount_to_send if ip_amount_to_send <= len(ips) else len(ips)).to_bytes(2, byteorder='big')
-    nsc = b'\x00\x00'
-    arc = b'\x00\x00'
+        flags = get_flags(data[2:4])
+        qdc = b'\x00\x01'
+        anc = (ip_amount_to_send if ip_amount_to_send < len(ips) else len(ips)).to_bytes(2, byteorder='big')
+        nsc = b'\x00\x00'
+        arc = b'\x00\x00'
 
-    header = tid_b + flags + qdc + anc + nsc + arc
+        header = tid_b + flags + qdc + anc + nsc + arc
 
-    question = build_question()
+        question = build_question()
 
-    body = b''
-    records = list(dict.fromkeys(random.choices(ips, k=ip_amount_to_send)))
-    if len(ips) != 0:
-        for record in records:
-            body += rec_to_bytes(600, record)
+        body = b''
+        records = list(dict.fromkeys(random.choices(ips, k=ip_amount_to_send)))
+        if len(ips) != 0:
+            for record in records:
+                body += rec_to_bytes(60, record)
 
-    return header + question + body, records
+        return header + question + body, records
 
 
 def run_dns():
@@ -133,6 +134,7 @@ def run_dns():
         with lock:
             global to_search
             to_search.append(ip)
+            print(len(ips))
 
         print('request from: ' + ip + ' on port ' + str(port) + ", response:", recs)
 
@@ -190,6 +192,8 @@ if __name__ == '__main__':
             inp = input()
             if inp == 'quit()' or inp == '^Z':
                 sys.exit('bye')
+            if inp == '':
+                continue
             add_ip(inp)
     except KeyboardInterrupt:
         quit(0)
